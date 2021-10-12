@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AppInstaller Uri="https://appinstaller.appframe.com/ReplaceWithFileName/drop/ReplaceWithFileName.appinstaller"
+              Version="1.0.0.0"
+              xmlns="http://schemas.microsoft.com/appx/appinstaller/2018">
+
+  <MainPackage Name="d79bc75b-9519-4055-9301-fb88e1da4a73"
+              Version="1.0.0.0"
+              Publisher="CN=Omega AS, O=Omega AS, L=Olensvaag, C=NO"
+              Uri="https://appinstaller.appframe.com/ReplaceWithFileName/drop/ReplaceWithFileName.msix"
+              ProcessorArchitecture="x86" />
+
+  <UpdateSettings>
+    <OnLaunch HoursBetweenUpdateChecks="0"/>
+  </UpdateSettings>
+
+</AppInstaller>

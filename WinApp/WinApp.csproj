@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Appframe.Data" Version="*" />
+    <PackageReference Include="Appframe.Win" Version="*" />
+    <PackageReference Include="Appframe.Win.v20.2" Version="*" />
+  </ItemGroup>
+</Project>

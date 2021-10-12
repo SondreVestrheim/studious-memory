@@ -1,0 +1,111 @@
+trigger:
+  branches:
+    include:
+      - master
+pr: none
+
+pool:
+  vmImage: windows-2019
+
+variables:
+  - group: appframer4kv01-vg
+  - name: buildPlatform
+    value: 'x86'
+  - name: buildConfiguration
+    value: 'Release'
+  - name: major
+    value: 1
+  - name: minor
+    value: 0
+  - name: build
+    value: 0
+  - name: revision
+    value: $[counter('rev', 0)]
+  - name: name
+    value: 'Application Name' # display name
+  - name: company
+    value: 'Omega 365'
+  - name: filename
+    value: 'Application File Name' # without extension
+
+steps:
+  # Sets the name of the build
+  - powershell: |
+      [string] $buildName = "$(name) v$(major).$(minor).$(build).$(revision)"
+      Write-Host "Setting the name of the build to '$buildName'."
+      Write-Host "##vso[build.updatebuildnumber]$buildName"
+    displayName: 'Set the name of the build'
+
+  # Updates index.html template and moves to the the artifact staging directory.
+  - powershell: |
+      (Get-Content $(System.DefaultWorkingDirectory)\Tools\index.html).replace('$TITLE$', '$(name)') | Set-Content $(Build.ArtifactStagingDirectory)\index.html
+      (Get-Content $(Build.ArtifactStagingDirectory)\index.html).replace('$COMPANY$', '$(company)') | Set-Content $(Build.ArtifactStagingDirectory)\index.html
+      (Get-Content $(Build.ArtifactStagingDirectory)\index.html).replace('$FILENAME$', '$(filename)') | Set-Content $(Build.ArtifactStagingDirectory)\index.html
+      (Get-Content $(Build.ArtifactStagingDirectory)\index.html).replace('$VERSION$', '$(major).$(minor).$(build).$(revision)') | Set-Content $(Build.ArtifactStagingDirectory)\index.html
+      (Get-Content $(Build.ArtifactStagingDirectory)\index.html).replace('$RNOTES$', "$(Build.SourceVersionMessage)") | Set-Content $(Build.ArtifactStagingDirectory)\index.html
+    displayName: 'Update installer HTML page'
+
+  # Install NuGet 5.8 cli
+  - task: NuGetToolInstaller@0
+    displayName: 'Use NuGet 5.8'
+    inputs:
+      versionSpec: 5.8
+
+  # NuGet restore task, uses WinLightFeed NuGet source in addition to the public nuget.org
+  - task: NuGetCommand@2
+    inputs:
+      command: 'restore'
+      restoreSolution: '**/WindowsApp.sln'
+      feedsToUse: 'select'
+      vstsFeed: 'd9c4642a-ef3e-453a-b657-387d14fdcc74/02df9ad6-9db1-4863-8492-477753e3d613'
+      restoreDirectory: '$(System.DefaultWorkingDirectory)\packages'
+
+  # AppframeR4 KeyVault service connection is needed to ensure we can grab the certificate from there.
+  - powershell: |
+      $kvCert = "$(omega-as-code-sign)"
+      $kvSecretBytes = [System.Convert]::FromBase64String($kvCert)
+      $certCollection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
+      $certCollection.Import($kvSecretBytes,$null,[System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+      $protectedCertificateBytes = $certCollection.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12)
+      $pfxPath = "$(System.DefaultWorkingDirectory)\Tools\OmegaAS.pfx"
+      [System.IO.File]::WriteAllBytes($pfxPath, $protectedCertificateBytes)
+    displayName: 'Get KeyVault certificate'
+
+  # Updates version in package manifest
+  - powershell: |
+      [xml]$manifest= get-content ".\PackageProject\Package.appxmanifest"
+      $manifest.Package.Identity.Version = "$(major).$(minor).$(build).$(revision)"    
+      $manifest.save("PackageProject\Package.appxmanifest")
+    displayName: 'Version Package Manifest'
+
+  # Updates version in appinstaller manifest
+  - powershell: |
+      [Reflection.Assembly]::LoadWithPartialName("System.Xml.Linq")
+      $doc = [System.Xml.Linq.XDocument]::Load("$(Build.SourcesDirectory)/PackageProject/Package.appinstaller")
+      $version = "$(major).$(minor).$(build).$(revision)"
+      $doc.Root.Attribute("Version").Value = $version;
+      $xName = [System.Xml.Linq.XName] "{http://schemas.microsoft.com/appx/appinstaller/2018}MainPackage"
+      $doc.Root.Element($xName).Attribute("Version").Value = $version;
+      $doc.Save("$(Build.ArtifactStagingDirectory)/$(filename).appinstaller")
+    displayName: 'Version App Installer File'
+
+  # Builds the PackageProject
+  - task: MSBuild@1
+    inputs:
+      solution: PackageProject/PackageProject.wapproj
+      platform: $(buildPlatform)
+      configuration: $(buildConfiguration)
+      msbuildArguments: '/p:OutputPath=NonPackagedApp
+                          /p:UapAppxPackageBuildMode=SideLoadOnly
+                          /p:AppxBundle=Never
+                          /p:AppxPackageOutput=$(Build.ArtifactStagingDirectory)\$(filename).msix
+                          /p:AppxPackageSigningEnabled=true
+                          /p:PackageCertificateThumbprint="9BE654FB88F1EF52AB2C58EABD345A3C994C6E45"
+                          /p:PackageCertificateKeyFile="$(System.DefaultWorkingDirectory)\Tools\OmegaAS.pfx"'
+    displayName: 'Package the App'
+
+  # Publishes build artifacts
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Artifacts'
+    inputs:
+      PathtoPublish: '$(build.artifactstagingdirectory)'
